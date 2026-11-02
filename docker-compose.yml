@@ -1,0 +1,131 @@
+# =============================================================================
+# RegulaRAG — Docker Compose development environment
+# =============================================================================
+# Starts the backend application together with its supporting data services.
+#
+# Usage:
+#   docker compose up -d            # Start all services in the background
+#   docker compose up -d postgres   # Start only PostgreSQL
+#   docker compose logs -f backend  # Tail backend logs
+#   docker compose down             # Stop and remove containers
+#   docker compose down -v          # Stop and remove containers + volumes
+#
+# Prerequisites:
+#   - Copy .env.example to .env and fill in passwords before starting.
+#   - Docker Engine 24+ and Docker Compose v2+.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend — RegulaRAG FastAPI application
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: regularag-backend
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-console}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-regularag}
+      POSTGRES_USER: ${POSTGRES_USER:-regularag_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - regularag-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — primary relational database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: regularag-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-regularag}
+      POSTGRES_USER: ${POSTGRES_USER:-regularag_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - regularag-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-regularag_user} -d ${POSTGRES_DB:-regularag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Elasticsearch — full-text search and BM25 retrieval (Phase 4)
+  #
+  # NOTE: Elasticsearch requires at least 2 GB of heap memory.
+  # On a laptop with limited RAM, comment out this service and run it
+  # only when working on Phase 4 search features.
+  # The application will start without it (Phase 1-3 do not use Elasticsearch).
+  #
+  # Lightweight alternative for development: OpenSearch with xpack.security
+  # disabled, or simply skip Elasticsearch until Phase 4.
+  # ---------------------------------------------------------------------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.16.0
+    container_name: regularag-elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx1g"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - regularag-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    # Uncomment the following to limit Elasticsearch to Phase 4+ work:
+    # profiles: ["search"]
+
+# =============================================================================
+# Volumes — persistent data storage
+# =============================================================================
+volumes:
+  postgres-data:
+    driver: local
+  elasticsearch-data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  regularag-network:
+    driver: bridge
+

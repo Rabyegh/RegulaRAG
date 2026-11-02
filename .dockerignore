@@ -1,0 +1,61 @@
+# =============================================================================
+# RegulaRAG — .dockerignore
+# =============================================================================
+# Prevents unnecessary files from being sent to the Docker build context.
+# =============================================================================
+
+# Git
+.git/
+.gitignore
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Secrets (never include in Docker context)
+.env
+*.env
+secrets/
+
+# Documentation (not needed at runtime)
+docs/
+*.md
+
+# Development configuration
+.vscode/
+.idea/
+
+# Testing
+tests/
+coverage.xml
+.coverage
+htmlcov/
+
+# Data files (large; mounted via volumes in development)
+data/
+
+# Node / Frontend (built separately)
+frontend/node_modules/
+frontend/.next/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+

@@ -1,0 +1,123 @@
+# =============================================================================
+# RegulaRAG — .gitignore
+# =============================================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+.eggs/
+
+# --- Virtual environments ---
+.venv/
+venv/
+ENV/
+env/
+.env.local
+.env.*.local
+
+# --- Secrets & credentials (NEVER commit these) ---
+.env
+*.env
+secrets/
+credentials/
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+
+# --- uv ---
+.uv/
+uv.lock
+
+# --- IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Testing & coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.coveragerc
+
+# --- Type checking ---
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# --- Ruff ---
+.ruff_cache/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.ipynb
+
+# --- Data files (large, generated) ---
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/evaluation/results/
+!data/evaluation/.gitkeep
+
+# --- Docker ---
+.docker/
+
+# --- Logs ---
+logs/
+*.log
+*.log.*
+
+# --- Database files ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Node / Frontend ---
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/build/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# --- Temporary files ---
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
