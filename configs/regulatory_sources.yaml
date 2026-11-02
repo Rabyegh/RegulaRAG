@@ -1,0 +1,259 @@
+# =============================================================================
+# RegulaRAG — Official Regulatory Source Registry
+# =============================================================================
+# Schema version: 1.0.0
+# Authoritative Source: EUR-Lex (Publications Office of the European Union)
+# Verification Date: 2026-11-02
+#
+# IMPORTANT LEGAL DISTINCTION:
+# - Original Legal Act (Sector 3): The authentic, legally binding text as
+#   published in the Official Journal (OJ).
+# - Consolidated Text (Sector 0): An unofficial, non-binding editorial synthesis
+#   incorporating amendments and corrigenda up to a specific date.
+# - Corrigenda: Official corrections published in the OJ to rectify translation
+#   or printing discrepancies.
+# =============================================================================
+
+schema_version: "1.0.0"
+source_repository: "EUR-Lex"
+base_authority_url: "https://eur-lex.europa.eu"
+last_registry_update: "2026-11-02"
+
+sources:
+  # ---------------------------------------------------------------------------
+  # 1. EU AI Act
+  # ---------------------------------------------------------------------------
+  - document_id: "eu_ai_act"
+    name: "Regulation (EU) 2024/1689 of the European Parliament and of the Council of 13 June 2024 laying down harmonised rules on artificial intelligence and amending Regulations (EC) No 300/2008, (EU) No 167/2013, (EU) No 168/2013, (EU) 2018/858, (EU) 2018/1139 and (EU) 2019/2144 and Directives 2014/90/EU, (EU) 2016/797 and (EU) 2020/1828 (Artificial Intelligence Act)"
+    abbreviation: "EU AI Act"
+    instrument_type: "Regulation"
+    celex_id: "32024R1689"
+    eli_uri: "http://data.europa.eu/eli/reg/2024/1689/oj"
+    official_source_url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689"
+    jurisdiction: "EU"
+    publication_date: "2024-07-12"
+    entry_into_force_date: "2024-08-01"
+    application_date: "2026-08-02"
+    transposition_deadline: null
+    language: "EN"
+    preferred_format: "HTML"
+    available_formats:
+      - "HTML"
+      - "XML"
+      - "PDF"
+    consolidation_available: false
+    consolidated_celex_id: null
+    source_authority: "European Parliament and Council of the European Union"
+    status: "in_force_phased_application"
+    official_journal_reference: "OJ L, 2024/1689, 12.7.2024"
+    corrigenda:
+      - celex_id: "32024R1689R(01)"
+        publication_date: "2024-11-20"
+        description: "Corrigendum to Regulation (EU) 2024/1689 published in OJ L on 20 November 2024"
+    phased_application_timeline:
+      - phase: "Prohibited AI practices"
+        date: "2025-02-02"
+        reference: "Article 111(2)"
+      - phase: "Notified bodies, GPAI governance, penalties"
+        date: "2025-08-02"
+        reference: "Article 111(2)"
+      - phase: "General application (including Annex III high-risk)"
+        date: "2026-08-02"
+        reference: "Article 111(1)"
+      - phase: "High-risk AI systems in Annex I regulated products"
+        date: "2027-08-02"
+        reference: "Article 111(3)"
+    notes: "Regulation directly applicable across all EU Member States. Phased application over 36 months."
+    last_verified_at: "2026-11-02T20:00:00Z"
+
+  # ---------------------------------------------------------------------------
+  # 2. GDPR
+  # ---------------------------------------------------------------------------
+  - document_id: "eu_gdpr"
+    name: "Regulation (EU) 2016/679 of the European Parliament and of the Council of 27 April 2016 on the protection of natural persons with regard to the processing of personal data and on the free movement of such data, and repealing Directive 95/46/EC (General Data Protection Regulation)"
+    abbreviation: "GDPR"
+    instrument_type: "Regulation"
+    celex_id: "32016R0679"
+    eli_uri: "http://data.europa.eu/eli/reg/2016/679/oj"
+    official_source_url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679"
+    jurisdiction: "EU"
+    publication_date: "2016-05-04"
+    entry_into_force_date: "2016-05-24"
+    application_date: "2018-05-25"
+    transposition_deadline: null
+    language: "EN"
+    preferred_format: "HTML"
+    available_formats:
+      - "HTML"
+      - "XML"
+      - "PDF"
+    consolidation_available: true
+    consolidated_celex_id: "02016R0679-20210304"
+    source_authority: "European Parliament and Council of the European Union"
+    status: "in_force_fully_applicable"
+    official_journal_reference: "OJ L 119, 4.5.2016, p. 1–88"
+    corrigenda:
+      - celex_id: "32016R0679R(02)"
+        publication_date: "2018-05-23"
+        description: "Corrigendum published in OJ L 127, 23.5.2018, p. 2"
+      - celex_id: "32016R0679R(03)"
+        publication_date: "2021-03-04"
+        description: "Corrigendum published in OJ L 74, 4.3.2021, p. 35"
+    phased_application_timeline:
+      - phase: "Full application"
+        date: "2018-05-25"
+        reference: "Article 99(2)"
+    notes: "Consolidated text 02016R0679-20210304 integrates both corrigenda but remains legally non-binding; authentic legal text is OJ L 119."
+    last_verified_at: "2026-11-02T20:00:00Z"
+
+  # ---------------------------------------------------------------------------
+  # 3. Digital Services Act (DSA)
+  # ---------------------------------------------------------------------------
+  - document_id: "eu_dsa"
+    name: "Regulation (EU) 2022/2065 of the European Parliament and of the Council of 19 October 2022 on a Single Market For Digital Services and amending Directive 2000/31/EC (Digital Services Act)"
+    abbreviation: "DSA"
+    instrument_type: "Regulation"
+    celex_id: "32022R2065"
+    eli_uri: "http://data.europa.eu/eli/reg/2022/2065/oj"
+    official_source_url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R2065"
+    jurisdiction: "EU"
+    publication_date: "2022-10-27"
+    entry_into_force_date: "2022-11-16"
+    application_date: "2024-02-17"
+    transposition_deadline: null
+    language: "EN"
+    preferred_format: "HTML"
+    available_formats:
+      - "HTML"
+      - "XML"
+      - "PDF"
+    consolidation_available: false
+    consolidated_celex_id: null
+    source_authority: "European Parliament and Council of the European Union"
+    status: "in_force_fully_applicable"
+    official_journal_reference: "OJ L 277, 27.10.2022, p. 1–102"
+    corrigenda: []
+    phased_application_timeline:
+      - phase: "Designation and obligations for VLOPs/VLOSEs"
+        date: "2023-04-25"
+        reference: "Article 93(2)"
+      - phase: "General application for all intermediary services"
+        date: "2024-02-17"
+        reference: "Article 93(1)"
+    notes: "Directly applicable. VLOP/VLOSE obligations applied early following European Commission designation decisions."
+    last_verified_at: "2026-11-02T20:00:00Z"
+
+  # ---------------------------------------------------------------------------
+  # 4. Digital Markets Act (DMA)
+  # ---------------------------------------------------------------------------
+  - document_id: "eu_dma"
+    name: "Regulation (EU) 2022/1925 of the European Parliament and of the Council of 14 September 2022 on contestable and fair markets in the digital sector and amending Directives (EU) 2019/1937 and (EU) 2020/1828 (Digital Markets Act)"
+    abbreviation: "DMA"
+    instrument_type: "Regulation"
+    celex_id: "32022R1925"
+    eli_uri: "http://data.europa.eu/eli/reg/2022/1925/oj"
+    official_source_url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R1925"
+    jurisdiction: "EU"
+    publication_date: "2022-10-12"
+    entry_into_force_date: "2022-11-01"
+    application_date: "2023-05-02"
+    transposition_deadline: null
+    language: "EN"
+    preferred_format: "HTML"
+    available_formats:
+      - "HTML"
+      - "XML"
+      - "PDF"
+    consolidation_available: false
+    consolidated_celex_id: null
+    source_authority: "European Parliament and Council of the European Union"
+    status: "in_force_fully_applicable"
+    official_journal_reference: "OJ L 265, 12.10.2022, p. 1–66"
+    corrigenda: []
+    phased_application_timeline:
+      - phase: "General entry into application"
+        date: "2023-05-02"
+        reference: "Article 54(1)"
+      - phase: "Designated gatekeeper compliance deadline"
+        date: "2024-03-07"
+        reference: "Article 3(10)"
+    notes: "Directly applicable. Gatekeepers designated in September 2023 had 6 months to comply (March 2024)."
+    last_verified_at: "2026-11-02T20:00:00Z"
+
+  # ---------------------------------------------------------------------------
+  # 5. Data Act
+  # ---------------------------------------------------------------------------
+  - document_id: "eu_data_act"
+    name: "Regulation (EU) 2023/2854 of the European Parliament and of the Council of 13 December 2023 on harmonised rules on fair access to and use of data and amending Regulation (EU) 2017/2394 and Directive (EU) 2020/1828 (Data Act)"
+    abbreviation: "Data Act"
+    instrument_type: "Regulation"
+    celex_id: "32023R2854"
+    eli_uri: "http://data.europa.eu/eli/reg/2023/2854/oj"
+    official_source_url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32023R2854"
+    jurisdiction: "EU"
+    publication_date: "2023-12-22"
+    entry_into_force_date: "2024-01-11"
+    application_date: "2025-09-12"
+    transposition_deadline: null
+    language: "EN"
+    preferred_format: "HTML"
+    available_formats:
+      - "HTML"
+      - "XML"
+      - "PDF"
+    consolidation_available: false
+    consolidated_celex_id: null
+    source_authority: "European Parliament and Council of the European Union"
+    status: "in_force_pending_application"
+    official_journal_reference: "OJ L, 2023/2854, 22.12.2023"
+    corrigenda: []
+    phased_application_timeline:
+      - phase: "General application"
+        date: "2025-09-12"
+        reference: "Article 50(1)"
+      - phase: "Connected product design obligations"
+        date: "2026-09-12"
+        reference: "Article 50(2)"
+    notes: "Directly applicable. Entered into force 11 January 2024, generally applies from 12 September 2025."
+    last_verified_at: "2026-11-02T20:00:00Z"
+
+  # ---------------------------------------------------------------------------
+  # 6. NIS2 Directive
+  # ---------------------------------------------------------------------------
+  - document_id: "eu_nis2"
+    name: "Directive (EU) 2022/2555 of the European Parliament and of the Council of 14 December 2022 on measures for a high common level of cybersecurity across the Union, amending Regulation (EU) No 910/2014 and Directive (EU) 2018/1972, and repealing Directive (EU) 2016/1148 (NIS 2 Directive)"
+    abbreviation: "NIS2"
+    instrument_type: "Directive"
+    celex_id: "32022L2555"
+    eli_uri: "http://data.europa.eu/eli/dir/2022/2555/oj"
+    official_source_url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022L2555"
+    jurisdiction: "EU"
+    publication_date: "2022-12-27"
+    entry_into_force_date: "2023-01-16"
+    application_date: "2024-10-18"
+    transposition_deadline: "2024-10-17"
+    language: "EN"
+    preferred_format: "HTML"
+    available_formats:
+      - "HTML"
+      - "XML"
+      - "PDF"
+    consolidation_available: false
+    consolidated_celex_id: null
+    source_authority: "European Parliament and Council of the European Union"
+    status: "in_force_transposition_expired"
+    official_journal_reference: "OJ L 333, 27.12.2022, p. 80–152"
+    corrigenda: []
+    phased_application_timeline:
+      - phase: "Member State transposition deadline"
+        date: "2024-10-17"
+        reference: "Article 41(1)"
+      - phase: "National implementation application"
+        date: "2024-10-18"
+        reference: "Article 41(1)"
+      - phase: "Entities list identification deadline"
+        date: "2025-04-17"
+        reference: "Article 3(3)"
+    notes: "Directive requires transposition into 27 national legal frameworks. Transposition deadline expired 17 October 2024."
+    last_verified_at: "2026-11-02T20:00:00Z"
+

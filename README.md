@@ -49,6 +49,7 @@ RAG is particularly well-suited to legal intelligence because it:
 | pytest test suite with async support | ✅ |
 | Ruff lint + format configuration | ✅ |
 | Architectural Decision Records | ✅ |
+| Official regulatory source registry & data contract | ✅ (Subphase 2.1) |
 
 ### 🔜 Planned (Phases 2–8)
 
@@ -369,8 +370,8 @@ uv run mypy src/
 
 | Phase | Title | Status |
 |-------|-------|--------|
-| **1** | Project Foundation & Architecture | ✅ **Current** |
-| **2** | Regulatory Data Engineering Pipeline | 🔜 Next |
+| **1** | Project Foundation & Architecture | ✅ Completed |
+| **2** | Regulatory Data Engineering Pipeline | 🟡 **In Progress** (Subphase 2.1 Complete) |
 | **3** | Legal Document Intelligence & Storage | 📅 Planned |
 | **4** | Core Hybrid RAG Engine | 📅 Planned |
 | **5** | Advanced RAG & Legal Knowledge Graph | 📅 Planned |

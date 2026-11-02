@@ -98,17 +98,44 @@ The backend is organised as the `regularag` Python package under `src/regularag/
 
 ## Data Flow
 
-### Document Ingestion (Phase 2–3)
+### Document Ingestion Architecture (Phase 2)
 
+The regulatory document ingestion pipeline follows a structured, deterministic flow designed in Subphase 2.1:
+
+```mermaid
+flowchart LR
+    subgraph SOURCES["Official Repositories"]
+        EURL["EUR-Lex Official Portal"]
+    end
+
+    subgraph CONFIG["Registry"]
+        REG["Source Registry\nconfigs/regulatory_sources.yaml\n✅ Subphase 2.1"]
+    end
+
+    subgraph INGESTION["Ingestion Pipeline (Phase 2)"]
+        DISC["1. Discovery &\nTarget Resolution"]
+        META["2. Metadata Validation\n(ETag, CELEX, Headers)"]
+        ACQ["3. Acquisition\n(Streaming HTTP GET)"]
+        STORE["4. Raw Storage\n(data/raw/... immutable)"]
+        INTEG["5. Integrity Validation\n(SHA-256 Checksum)"]
+    end
+
+    subgraph PIPELINE["Downstream Pipeline"]
+        PROC["Processing Pipeline\n(Phase 3 Legal Chunking)"]
+    end
+
+    REG --> DISC
+    EURL <--> DISC
+    DISC --> META
+    META --> ACQ
+    ACQ --> STORE
+    STORE --> INTEG
+    INTEG --> PROC
+
+    style REG fill:#2d8a4e,color:#fff
 ```
-Official Source URL
-    → Ingestion Module (download, validate, store raw)
-    → Processing Module (parse structure, legal chunking)
-    → PostgreSQL (metadata, chunk text)
-    → pgvector (chunk embeddings)
-    → Elasticsearch (BM25 index)
-    → Neo4j (legal entity graph)
-```
+
+*Note: The Source Registry and its schemas are implemented in Subphase 2.1 (green). Automated discovery, acquisition, and storage connectors are designed and will be implemented in subsequent Phase 2 subphases.*
 
 ### RAG Query (Phase 4)
 
@@ -188,7 +215,8 @@ The full RAG pipeline (planned for Phase 4) will follow this pattern:
 | Structured logging | ✅ | 1 |
 | Exception handling | ✅ | 1 |
 | Docker environment | ✅ | 1 |
-| Document ingestion pipeline | ❌ | 2 |
+| Document ingestion source registry & data contract | ✅ | 2 (Subphase 2.1) |
+| Document acquisition connectors & storage pipeline | ❌ | 2 (Subphases 2.2–2.3) |
 | Legal document parsing | ❌ | 3 |
 | Vector embeddings | ❌ | 3 |
 | Hybrid RAG engine | ❌ | 4 |
