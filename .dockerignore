@@ -27,9 +27,10 @@ ENV/
 *.env
 secrets/
 
-# Documentation (not needed at runtime)
+# Documentation (not needed at runtime, except README for package build)
 docs/
 *.md
+!README.md
 
 # Development configuration
 .vscode/

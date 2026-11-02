@@ -17,7 +17,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 WORKDIR /app
 
 # Copy dependency manifests first (Docker layer caching)
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 # Install runtime dependencies into /app/.venv (no dev/test extras)

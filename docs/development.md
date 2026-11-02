@@ -220,6 +220,7 @@ To reset the singleton during testing:
 
 ```python
 from regularag.core.config import get_settings
+
 get_settings.cache_clear()
 ```
 
