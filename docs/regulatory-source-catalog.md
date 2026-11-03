@@ -189,13 +189,26 @@ Under EU legal doctrine, documents published in the **Official Journal of the Eu
 
 ## 4. CELEX and ELI Structure Guide
 
-### CELEX Dissection
-A CELEX identifier consists of four elements:
-`[Sector][Year][DocType][Number]`
-- **Sector 3:** Secondary EU legislation (binding acts).
-- **Sector 0:** Consolidated acts (non-binding editorial texts).
-- **DocType:** `R` (Regulation), `L` (Directive), `D` (Decision).
-- **Number:** 4 digits with leading zeros (e.g., `0679` for GDPR).
+### CELEX Dissection and Classification
+EUR-Lex CELEX identifiers follow a deterministic schema:
+`[Sector][Year][DocType][Number][Suffix]`
+
+1. **Original Legal Acts (Authentic)**:
+   - Format: `3YYYY[DocType]NNNN` (or Sectors 1–4)
+   - Examples: `32024R1689` (AI Act), `32016R0679` (GDPR), `32022L2555` (NIS2)
+   - Sector `3`: Secondary EU legislation (Regulations, Directives, Decisions).
+   - DocType: `R` (Regulation), `L` (Directive), `D` (Decision).
+   - Number: 4 digits with leading zeros (e.g., `0679` for GDPR).
+
+2. **Consolidated Texts (Editorial synthesis)**:
+   - Format: `0YYYY[DocType]NNNN-YYYYMMDD`
+   - Example: `02016R0679-20210304` (GDPR consolidated as of 4 March 2021).
+   - Sector `0`: Consolidated family. Suffix represents the effective consolidation cutoff date.
+
+3. **Corrigenda (Official corrections in OJ)**:
+   - Format: `3YYYY[DocType]NNNNR(XX)`
+   - Examples: `32024R1689R(01)` (AI Act Corrigendum 1), `32016R0679R(02)` (GDPR Corrigendum 2).
+   - Suffix: `R(` followed by a 2-digit sequential number and `)`. Rectifies linguistic/typographical errors in the authentic OJ publication.
 
 ### European Legislation Identifier (ELI)
 ELI provides a permanent, language-neutral, URI-based standard:

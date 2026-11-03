@@ -16,8 +16,11 @@ from pydantic import ValidationError
 
 from regularag.core.exceptions import ConfigurationError
 from regularag.ingestion.models import (
+    CelexType,
+    CorrigendumEntry,
     RegulatorySourceEntry,
     RegulatorySourceRegistry,
+    classify_celex,
 )
 from regularag.ingestion.sources import load_regulatory_sources
 
@@ -237,3 +240,276 @@ sources:
                 status="in_force",
                 last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
             )
+
+    def test_publication_after_entry_into_force_fails_validation(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            RegulatorySourceEntry(
+                document_id="invalid_dates",
+                name="Regulation (EU) 2024/9999 of the European Parliament and Council",
+                abbreviation="TestDates",
+                instrument_type="Regulation",
+                celex_id="32024R9999",
+                eli_uri="http://data.europa.eu/eli/reg/2024/9999/oj",  # type: ignore[arg-type]
+                official_source_url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R9999",  # type: ignore[arg-type]
+                jurisdiction="EU",
+                publication_date=date(2024, 6, 1),
+                entry_into_force_date=date(2024, 1, 1),  # Earlier than publication date!
+                transposition_deadline=None,
+                language="EN",
+                preferred_format="HTML",
+                available_formats=["HTML"],
+                consolidation_available=False,
+                source_authority="EU",
+                status="in_force",
+                last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
+            )
+        assert "cannot precede publication_date" in str(exc_info.value)
+
+
+@pytest.mark.unit
+class TestCelexClassificationAndValidation:
+    """Comprehensive tests for CELEX identifier parsing, classification, and validation."""
+
+    @pytest.mark.parametrize(
+        ("celex_id", "expected_type"),
+        [
+            # Original Acts (Regulations, Directives, Decisions across Sectors 1-4)
+            ("32024R1689", CelexType.ORIGINAL_ACT),  # EU AI Act
+            ("32016R0679", CelexType.ORIGINAL_ACT),  # GDPR
+            ("32022R2065", CelexType.ORIGINAL_ACT),  # DSA
+            ("32022R1925", CelexType.ORIGINAL_ACT),  # DMA
+            ("32023R2854", CelexType.ORIGINAL_ACT),  # Data Act
+            ("32022L2555", CelexType.ORIGINAL_ACT),  # NIS2 Directive
+            ("32019R0881", CelexType.ORIGINAL_ACT),  # Cybersecurity Act
+            ("32023D0001", CelexType.ORIGINAL_ACT),  # Decision
+            # Consolidated texts (Sector 0)
+            ("02016R0679-20210304", CelexType.CONSOLIDATED),  # GDPR consolidated
+            ("02022R2065-20240217", CelexType.CONSOLIDATED),  # DSA synthetic consolidation
+            ("02024R1689-20250202", CelexType.CONSOLIDATED),  # AI Act synthetic consolidation
+            ("02022L2555-20230116", CelexType.CONSOLIDATED),  # NIS2 synthetic consolidation
+            # Corrigenda (Sector 3 with R(XX))
+            ("32024R1689R(01)", CelexType.CORRIGENDUM),  # AI Act corrigendum 1
+            ("32016R0679R(02)", CelexType.CORRIGENDUM),  # GDPR corrigendum 2
+            ("32016R0679R(03)", CelexType.CORRIGENDUM),  # GDPR corrigendum 3
+            ("32022L2555R(01)", CelexType.CORRIGENDUM),  # NIS2 corrigendum 1
+        ],
+    )
+    def test_classify_celex_valid_identifiers(
+        self, celex_id: str, expected_type: CelexType
+    ) -> None:
+        assert classify_celex(celex_id) == expected_type
+
+    @pytest.mark.parametrize(
+        "invalid_celex",
+        [
+            "",  # Empty string
+            "   ",  # Whitespace
+            "not_a_celex",  # Arbitrary string
+            "99999X0000",  # Invalid sector and format
+            "32024R",  # Truncated
+            "32024R168900",  # Too many digits
+            "32024r1689",  # Lowercase type letter
+            "02016R0679",  # Consolidated prefix without date suffix
+            "02016R0679-202103",  # Incomplete date suffix
+            "02016R0679_20210304",  # Underscore instead of hyphen
+            "32024R1689R1",  # Corrigendum missing parens
+            "32024R1689(01)",  # Corrigendum missing 'R'
+            "32024R1689R(1)",  # Corrigendum single digit without zero pad
+            "32024R1689R(100)",  # Corrigendum 3 digits
+        ],
+    )
+    def test_classify_celex_invalid_identifiers_raises(self, invalid_celex: str) -> None:
+        with pytest.raises(ValueError, match="Invalid or unsupported CELEX identifier format"):
+            classify_celex(invalid_celex)
+
+    def test_consolidated_celex_rejected_as_primary_act(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            RegulatorySourceEntry(
+                document_id="invalid_celex_type",
+                name="Consolidated Regulation (EU) 2016/679",
+                abbreviation="ConsGDPR",
+                instrument_type="Regulation",
+                celex_id="02016R0679-20210304",  # Consolidated CELEX instead of original!
+                eli_uri="http://data.europa.eu/eli/reg/2016/679/oj",  # type: ignore[arg-type]
+                official_source_url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679",  # type: ignore[arg-type]
+                jurisdiction="EU",
+                publication_date=date(2016, 5, 4),
+                entry_into_force_date=date(2016, 5, 24),
+                transposition_deadline=None,
+                language="EN",
+                preferred_format="HTML",
+                available_formats=["HTML"],
+                consolidation_available=False,
+                source_authority="EU",
+                status="in_force",
+                last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
+            )
+        assert "Primary celex_id must be an original legal act" in str(exc_info.value)
+
+    def test_corrigendum_celex_rejected_as_primary_act(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            RegulatorySourceEntry(
+                document_id="invalid_corr_primary",
+                name="Corrigendum to Regulation (EU) 2024/1689",
+                abbreviation="CorrAIAct",
+                instrument_type="Regulation",
+                celex_id="32024R1689R(01)",  # Corrigendum CELEX instead of original!
+                eli_uri="http://data.europa.eu/eli/reg/2024/1689/oj",  # type: ignore[arg-type]
+                official_source_url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689",  # type: ignore[arg-type]
+                jurisdiction="EU",
+                publication_date=date(2024, 7, 12),
+                entry_into_force_date=date(2024, 8, 1),
+                transposition_deadline=None,
+                language="EN",
+                preferred_format="HTML",
+                available_formats=["HTML"],
+                consolidation_available=False,
+                source_authority="EU",
+                status="in_force",
+                last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
+            )
+        assert "Primary celex_id must be an original legal act" in str(exc_info.value)
+
+    def test_original_celex_rejected_as_consolidated_id(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            RegulatorySourceEntry(
+                document_id="invalid_cons_field",
+                name="Regulation (EU) 2016/679 of the European Parliament and Council",
+                abbreviation="GDPR",
+                instrument_type="Regulation",
+                celex_id="32016R0679",
+                eli_uri="http://data.europa.eu/eli/reg/2016/679/oj",  # type: ignore[arg-type]
+                official_source_url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679",  # type: ignore[arg-type]
+                jurisdiction="EU",
+                publication_date=date(2016, 5, 4),
+                entry_into_force_date=date(2016, 5, 24),
+                transposition_deadline=None,
+                language="EN",
+                preferred_format="HTML",
+                available_formats=["HTML"],
+                consolidation_available=True,
+                consolidated_celex_id="32016R0679",  # Invalid! Not consolidated CELEX
+                source_authority="EU",
+                status="in_force",
+                last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
+            )
+        assert "consolidated_celex_id must be a consolidated text" in str(exc_info.value)
+
+    def test_consolidated_celex_base_mismatch_raises(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            RegulatorySourceEntry(
+                document_id="mismatched_cons",
+                name="Regulation (EU) 2024/1689 AI Act",
+                abbreviation="AI Act",
+                instrument_type="Regulation",
+                celex_id="32024R1689",
+                eli_uri="http://data.europa.eu/eli/reg/2024/1689/oj",  # type: ignore[arg-type]
+                official_source_url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689",  # type: ignore[arg-type]
+                jurisdiction="EU",
+                publication_date=date(2024, 7, 12),
+                entry_into_force_date=date(2024, 8, 1),
+                transposition_deadline=None,
+                language="EN",
+                preferred_format="HTML",
+                available_formats=["HTML"],
+                consolidation_available=True,
+                consolidated_celex_id="02016R0679-20210304",  # GDPR ID assigned to AI Act!
+                source_authority="EU",
+                status="in_force",
+                last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
+            )
+        assert "does not match document celex_id" in str(exc_info.value)
+
+    def test_corrigendum_parent_mismatch_raises(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            RegulatorySourceEntry(
+                document_id="mismatched_corr",
+                name="Regulation (EU) 2024/1689 AI Act",
+                abbreviation="AI Act",
+                instrument_type="Regulation",
+                celex_id="32024R1689",
+                eli_uri="http://data.europa.eu/eli/reg/2024/1689/oj",  # type: ignore[arg-type]
+                official_source_url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689",  # type: ignore[arg-type]
+                jurisdiction="EU",
+                publication_date=date(2024, 7, 12),
+                entry_into_force_date=date(2024, 8, 1),
+                transposition_deadline=None,
+                language="EN",
+                preferred_format="HTML",
+                available_formats=["HTML"],
+                consolidation_available=False,
+                corrigenda=[
+                    CorrigendumEntry(
+                        celex_id="32016R0679R(02)",  # GDPR corrigendum attached to AI Act!
+                        publication_date=date(2018, 5, 23),
+                        description="Mismatched corrigendum",
+                    )
+                ],
+                source_authority="EU",
+                status="in_force",
+                last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
+            )
+        assert "does not match parent celex_id" in str(exc_info.value)
+
+    def test_corrigendum_model_rejects_original_celex(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            CorrigendumEntry(
+                celex_id="32024R1689",  # Original act passed as corrigendum
+                publication_date=date(2024, 11, 20),
+                description="Invalid corrigendum",
+            )
+        assert "Corrigendum celex_id must be of type CORRIGENDUM" in str(exc_info.value)
+
+    def test_consolidation_available_true_without_id_fails(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            RegulatorySourceEntry(
+                document_id="missing_cons_id",
+                name="Regulation (EU) 2016/679 GDPR",
+                abbreviation="GDPR",
+                instrument_type="Regulation",
+                celex_id="32016R0679",
+                eli_uri="http://data.europa.eu/eli/reg/2016/679/oj",  # type: ignore[arg-type]
+                official_source_url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679",  # type: ignore[arg-type]
+                jurisdiction="EU",
+                publication_date=date(2016, 5, 4),
+                entry_into_force_date=date(2016, 5, 24),
+                transposition_deadline=None,
+                language="EN",
+                preferred_format="HTML",
+                available_formats=["HTML"],
+                consolidation_available=True,
+                consolidated_celex_id=None,  # Missing!
+                source_authority="EU",
+                status="in_force",
+                last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
+            )
+        assert "specifies consolidation_available=True but consolidated_celex_id is None" in str(
+            exc_info.value
+        )
+
+    def test_consolidation_available_false_with_id_fails(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            RegulatorySourceEntry(
+                document_id="spurious_cons_id",
+                name="Regulation (EU) 2024/1689 AI Act",
+                abbreviation="AI Act",
+                instrument_type="Regulation",
+                celex_id="32024R1689",
+                eli_uri="http://data.europa.eu/eli/reg/2024/1689/oj",  # type: ignore[arg-type]
+                official_source_url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689",  # type: ignore[arg-type]
+                jurisdiction="EU",
+                publication_date=date(2024, 7, 12),
+                entry_into_force_date=date(2024, 8, 1),
+                transposition_deadline=None,
+                language="EN",
+                preferred_format="HTML",
+                available_formats=["HTML"],
+                consolidation_available=False,
+                consolidated_celex_id="02024R1689-20250202",  # Should be None!
+                source_authority="EU",
+                status="in_force",
+                last_verified_at="2026-11-02T00:00:00Z",  # type: ignore[arg-type]
+            )
+        assert "specifies consolidation_available=False but has consolidated_celex_id" in str(
+            exc_info.value
+        )

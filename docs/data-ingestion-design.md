@@ -78,6 +78,7 @@ Every acquired document artifact produces an immutable metadata sidecar conformi
 {
   "$schema": "https://regularag.org/schemas/v1/artifact_metadata.json",
   "artifact_id": "art_32024R1689_oj_en_html_v20240712",
+  "artifact_version_id": "orig_32024R1689_2024-07-12",
   "document_id": "eu_ai_act",
   "name": "Regulation (EU) 2024/1689 of the European Parliament and of the Council of 13 June 2024 laying down harmonised rules on artificial intelligence...",
   "abbreviation": "EU AI Act",
@@ -109,8 +110,8 @@ Every acquired document artifact produces an immutable metadata sidecar conformi
     "media_type": "text/html",
     "file_size_bytes": 1845230,
     "sha256_checksum": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-    "storage_relpath": "data/raw/eu/eu_ai_act/2024-07-12/eu_ai_act_32024R1689_original.html",
-    "sidecar_relpath": "data/raw/eu/eu_ai_act/2024-07-12/eu_ai_act_32024R1689_original.meta.json"
+    "storage_relpath": "data/raw/eu/eu_ai_act/original_2024-07-12/eu_ai_act_32024R1689_original.html",
+    "sidecar_relpath": "data/raw/eu/eu_ai_act/original_2024-07-12/eu_ai_act_32024R1689_original.meta.json"
   },
   "validation": {
     "is_valid": true,
@@ -126,24 +127,62 @@ Every acquired document artifact produces an immutable metadata sidecar conformi
 
 ---
 
-## 4. Distinguishing Document Categories and Update Events
+## 4. Distinguishing Document Categories and Version Identity
 
-In regulatory compliance, misidentifying document status creates severe legal risks. The pipeline enforces unambiguous classification rules:
+In regulatory compliance, misidentifying document status creates severe legal risks. The pipeline enforces unambiguous classification rules and distinct, non-overlapping version identifiers.
+
+### Document Category Classification
 
 | Category | CELEX Pattern | Legally Binding? | Update Trigger / Description |
 |---|---|---|---|
-| **Original Legal Act** | `3YYYY[R/L]NNNN` | **Yes (Authentic)** | Published in the Official Journal (OJ). The baseline legal act. |
-| **Consolidated Text** | `0YYYY[R/L]NNNN-YYYYMMDD` | **No (Editorial synthesis)** | Published periodically by the Publications Office when amendments or corrigenda take effect. Suffix denotes the effective date. |
+| **Original Legal Act** | `3YYYY[R/L/D]NNNN` | **Yes (Authentic)** | Published in the Official Journal (OJ). The baseline authentic legal act. |
+| **Consolidated Text** | `0YYYY[R/L/D]NNNN-YYYYMMDD` | **No (Editorial synthesis)** | Published periodically by the Publications Office when amendments or corrigenda take effect. Suffix denotes the effective date. |
 | **Amending Legal Act** | Distinct CELEX (e.g., `32024R...`) | **Yes (Authentic)** | A separate regulation or directive enacted by legislators to formally modify specific articles of an existing act. |
-| **Corrigendum (Correction)** | `3YYYY[R/L]NNNNR(XX)` | **Yes (Authentic)** | An official correction rectifying linguistic or typographical errors across OJ editions. |
+| **Corrigendum (Correction)** | `3YYYY[R/L/D]NNNNR(XX)` | **Yes (Authentic)** | An official correction rectifying linguistic or typographical errors across OJ editions. |
 | **Unchanged Retrieval** | Identical SHA-256 | N/A | Document was queried again, but remote ETag or SHA-256 matches existing local artifact. Zero processing needed. |
+
+### Canonical Immutable Version Identifiers (`artifact_version_id`)
+
+Every acquired artifact possesses an unambiguous, deterministic version identifier derived purely from its legal identity:
+
+1. **Original Legal Acts**:
+   - Format: `orig_{celex_id}_{publication_date}`
+   - Example: `orig_32024R1689_2024-07-12` (EU AI Act), `orig_32016R0679_2016-05-04` (GDPR)
+   - Scope: Fixed to the authentic publication date in the Official Journal.
+
+2. **Consolidated Texts**:
+   - Format: `cons_{consolidated_celex_id}`
+   - Example: `cons_02016R0679-20210304` (GDPR consolidated to 4 March 2021)
+   - Scope: The consolidation date (`20210304`) is an intrinsic component of the CELEX identifier assigned by EUR-Lex, ensuring uniqueness across successive consolidations.
+
+3. **Corrigenda**:
+   - Format: `corr_{normalized_celex}_{publication_date}`
+   - Example: `corr_32024R1689R01_2024-11-20` (AI Act Corrigendum 1)
+   - Scope: Parentheses in `R(01)` are normalized to `R01` for filesystem portability across all operating systems.
+
+### Relationship Between Legal Version Identity and Download Timestamps
+
+A strict conceptual distinction is maintained between **legal version identity** and **operational acquisition timestamps**:
+
+- **Legal Version Identity (`artifact_version_id`)**:
+  - Derived entirely from authoritative EU legal metadata (CELEX identifier, category, and publication/consolidation date).
+  - **Timeless and immutable**: The authentic text of Regulation (EU) 2016/679 as published on 2016-05-04 remains identical regardless of when it is crawled.
+  - Dictates file naming and directory structure under `data/raw/`.
+- **Download Timestamp (`retrieved_at`)**:
+  - Purely an **operational audit metric** recorded in the metadata sidecar (`document.meta.json` under `acquisition.retrieved_at`).
+  - **Never used as a directory key or version discriminator**: Using timestamps in paths would cause redundant duplicate directories on every re-crawl and confound legal revision with network transmission.
+- **Idempotent Re-crawling**:
+  - When an existing legal version is re-crawled, its streaming SHA-256 is computed.
+  - If the SHA-256 matches the existing artifact, the raw file is **not overwritten**. The system logs an idempotent retrieval event without disturbing downstream pipelines.
+  - Distinct legal artifacts (original act, corrigenda, consolidations) live in isolated subdirectories and **can never overwrite each other**.
 
 ---
 
 ## 5. Raw Data Storage Architecture
 
 ### Directory Layout
-Storage is structured deterministically by jurisdiction, document identifier, and effective version:
+
+Storage is structured deterministically by jurisdiction, document identifier, and legal artifact namespace:
 
 ```
 data/raw/
@@ -154,9 +193,9 @@ data/raw/
         │   ├── {document_id}_{celex}_original.meta.json
         │   └── {document_id}_{celex}_original.pdf (optional secondary format)
         ├── corrigenda/
-        │   └── {corrigendum_celex}/
-        │       ├── {document_id}_{corrigendum_celex}.html
-        │       └── {document_id}_{corrigendum_celex}.meta.json
+        │   └── {normalized_corrigendum_celex}/
+        │       ├── {document_id}_{normalized_corrigendum_celex}.html
+        │       └── {document_id}_{normalized_corrigendum_celex}.meta.json
         └── consolidated_{consolidation_date}/
             ├── {document_id}_{consolidated_celex}.html
             └── {document_id}_{consolidated_celex}.meta.json
@@ -183,32 +222,42 @@ data/raw/
 ```
 
 ### Safety and Atomicity Rules
-- **Atomic Writes:** Downloads write to `filename.tmp.[uuid]` and are renamed only when the stream completes and SHA-256 calculation matches.
-- **Fail-Safe Cleanup:** If a download fails or is aborted, the `.tmp` file is immediately deleted.
-- **Read-Only Downstream Operations:** Future ingestion and parsing components mount `data/raw` with read-only access.
+- **Atomic Writes:** Downloads stream to a staging file `filename.tmp.[uuid]` and are renamed into permanent storage only after the download completes and the computed SHA-256 matches validation checks.
+- **Fail-Safe Cleanup:** If a download stream fails or is cancelled, the `.tmp` file is immediately deleted.
+- **Read-Only Downstream Operations:** Processing and embedding components mount `data/raw` strictly read-only.
+- **Isolated Namespaces:** `original_*`, `corrigenda/*`, and `consolidated_*` are non-overlapping paths.
 
 ---
 
 ## 6. Update Detection Strategy
 
-To prevent redundant downloads and network saturation, the pipeline uses a layered detection hierarchy:
+To prevent redundant downloads while guaranteeing absolute legal accuracy, the pipeline establishes a clear distinction between **transport-level optimization hints** and **authoritative legal-version evidence**:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. HTTP HEAD with Conditional Headers                       │
-│    (If-None-Match, If-Modified-Since)                       │
-│    Fastest check — 304 Not Modified stops execution         │
+│ 1. HTTP HEAD with Conditional Headers (Transport Hint)      │
+│    (If-None-Match: etag, If-Modified-Since: date)           │
+│    Optimization: 304 Not Modified skips byte transfer       │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. EUR-Lex Cellar SPARQL Metadata Query                     │
-│    Checks for newly linked corrigenda or consolidated acts   │
+│ 2. EUR-Lex Cellar SPARQL Metadata Query (Legal Authority)   │
+│    Authoritative: Discovers newly published corrigenda,     │
+│    amendments, or consolidated editions in the OJ           │
 ├─────────────────────────────────────────────────────────────┤
-│ 3. Incremental Content SHA-256 Checksum                      │
-│    Authoritative proof of byte-for-byte change              │
+│ 3. Streaming SHA-256 Digest Verification (Content Authority)│
+│    Authoritative: Byte-level cryptographic proof of payload  │
+│    identity; prevents corrupt or duplicate storage          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **Authoritative:** SHA-256 hash computation and EUR-Lex official OJ publication notices.
-- **Optimization Hints:** HTTP `ETag` and `Last-Modified` headers. If the server does not support conditional headers, the file is downloaded to temporary storage and evaluated by hash before writing to permanent storage.
+### Transport Optimization Hints vs. Authoritative Evidence
+
+| Mechanism | Layer | Authority Level | Role & Behavior |
+|---|---|---|---|
+| **ETag Header** | HTTP Transport | **Optimization Hint (Non-authoritative)** | Web server cache validator. Can change due to EUR-Lex web server redeployments, reverse proxy restarts, or HTTP compression variations without any legal text change. Used to skip transfer via HTTP 304, but a changed ETag does *not* prove legal amendment. |
+| **Last-Modified Header** | HTTP Transport | **Optimization Hint (Non-authoritative)** | Filesystem timestamp from the EUR-Lex origin server. May change during backend CMS maintenance or website re-indexing. |
+| **Conditional GET (`If-None-Match`, `If-Modified-Since`)** | HTTP Transport | **Optimization Hint** | Purely bandwidth/network optimization. Enables fast `304 Not Modified` short-circuiting. |
+| **EUR-Lex Cellar / SPARQL Metadata** | EU Legal System of Record | **Authoritative Legal Evidence** | Authoritative notice that a new corrigendum, amending act, or consolidated family has been officially published in the Official Journal. Drives the generation of new registry entries and acquisition targets. |
+| **Cryptographic SHA-256 Digest** | Content / Cryptographic | **Authoritative Content Evidence** | Calculated on the streaming payload before permanent commit. Authoritative proof of byte-for-byte content identity. If the SHA-256 matches an existing local artifact, the local file is preserved untouched. |
 
 ---
 
