@@ -10,9 +10,10 @@ from __future__ import annotations
 import datetime as dt  # noqa: TC003 (needed at runtime by Pydantic)
 import re
 from enum import StrEnum
+from pathlib import Path  # noqa: TC003 (needed at runtime by Pydantic)
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 # -----------------------------------------------------------------------------
 # CELEX Validation & Classification Standards
@@ -256,3 +257,146 @@ class RegulatorySourceRegistry(BaseModel):
             if source.celex_id == celex_id:
                 return source
         return None
+
+
+# -----------------------------------------------------------------------------
+# Acquisition Layer Data Contracts (Subphase 2.2)
+# -----------------------------------------------------------------------------
+
+
+class AcquisitionStatus(StrEnum):
+    """Result status for an artifact acquisition attempt."""
+
+    SUCCESS = "success"
+    NOT_MODIFIED = "not_modified"
+    UNCHANGED = "unchanged"
+    FAILED = "failed"
+
+
+class AcquisitionAuditMetadata(BaseModel):
+    """Transport and acquisition audit information."""
+
+    retrieved_at: dt.datetime = Field(
+        description="UTC timestamp when the document acquisition occurred"
+    )
+    http_status: int = Field(description="HTTP response status code")
+    etag: str | None = Field(default=None, description="HTTP ETag header validator")
+    last_modified_header: str | None = Field(
+        default=None, description="HTTP Last-Modified header string"
+    )
+    retrieval_duration_seconds: float = Field(
+        description="Duration in seconds of the HTTP request and streaming"
+    )
+
+
+class FileAuditMetadata(BaseModel):
+    """Physical raw file storage and integrity metadata."""
+
+    format: str = Field(description="Document serialization format (HTML, XML, PDF)")
+    media_type: str = Field(description="MIME media type returned by the server")
+    file_size_bytes: int = Field(description="Size of the raw document file in bytes")
+    sha256_checksum: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description="Hexadecimal SHA-256 digest computed incrementally over raw bytes",
+    )
+    storage_relpath: str = Field(
+        description="Relative storage path of the raw document from workspace root"
+    )
+    sidecar_relpath: str = Field(description="Relative storage path of the metadata sidecar JSON")
+
+
+class ValidationAuditMetadata(BaseModel):
+    """Validation checks executed against the acquired artifact."""
+
+    is_valid: bool = Field(description="Whether all integrity checks passed")
+    validated_at: dt.datetime = Field(description="Timestamp when validation completed")
+    validation_checks_passed: list[str] = Field(
+        default_factory=list, description="List of successful validation rule identifiers"
+    )
+
+
+class ArtifactSidecarMetadata(BaseModel):
+    """Immutable metadata sidecar produced alongside every acquired raw artifact.
+
+    Strictly matches the schema defined in docs/data-ingestion-design.md.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_uri: str = Field(
+        default="https://regularag.org/schemas/v1/artifact_metadata.json",
+        alias="$schema",
+    )
+    artifact_id: str = Field(description="Canonical artifact unique identifier")
+    artifact_version_id: str = Field(description="Canonical immutable legal version identifier")
+    document_id: str = Field(description="Slug identifier from the source registry")
+    name: str = Field(description="Full official title of the legal act")
+    abbreviation: str = Field(description="Common acronym or title")
+    instrument_type: str = Field(description="Legal instrument classification")
+    celex_id: str = Field(description="Official CELEX identifier")
+    eli_uri: str = Field(description="Official ELI URI")
+    jurisdiction: str = Field(default="EU", description="Legal jurisdiction")
+    source_authority: str = Field(description="EU authoring institutions")
+    source_url: str = Field(description="Official source download URL")
+    language: str = Field(default="EN", description="ISO language code")
+    document_category: str = Field(
+        description="Legal status category: original_act, consolidated_text, corrigendum"
+    )
+    is_consolidated: bool = Field(default=False)
+    consolidation_date: dt.date | None = Field(default=None)
+    is_corrigendum: bool = Field(default=False)
+    corrigendum_parent_celex: str | None = Field(default=None)
+    publication_date: dt.date = Field(description="Date published in the Official Journal")
+    entry_into_force_date: dt.date | None = Field(default=None)
+    application_date: dt.date | None = Field(default=None)
+    transposition_deadline: dt.date | None = Field(default=None)
+    acquisition: AcquisitionAuditMetadata
+    file_metadata: FileAuditMetadata
+    validation: ValidationAuditMetadata
+
+
+class AcquisitionResult(BaseModel):
+    """Result summary of an acquisition operation."""
+
+    document_id: str
+    celex_id: str
+    artifact_version_id: str
+    status: AcquisitionStatus
+    http_status: int
+    file_path: Path | None = None
+    sidecar_path: Path | None = None
+    sha256_checksum: str | None = None
+    bytes_downloaded: int = 0
+    error_message: str | None = None
+    metadata: ArtifactSidecarMetadata | None = None
+
+
+def canonical_artifact_version_id(
+    celex_id: str,
+    publication_date: dt.date,
+    category: str = "original_act",
+) -> str:
+    """Generate canonical immutable version identifier according to design specification.
+
+    - Original act: orig_{celex_id}_{publication_date}
+    - Consolidated: cons_{consolidated_celex_id}
+    - Corrigendum: corr_{clean_celex}_{publication_date}
+    """
+    clean_celex = celex_id.replace("(", "").replace(")", "")
+    if category == "consolidated_text" or celex_id.startswith("0"):
+        return f"cons_{clean_celex}"
+    if category == "corrigendum" or "R(" in celex_id or "R" in celex_id[6:]:
+        return f"corr_{clean_celex}_{publication_date.isoformat()}"
+    return f"orig_{clean_celex}_{publication_date.isoformat()}"
+
+
+def canonical_artifact_id(
+    celex_id: str,
+    publication_date: dt.date,
+    language: str = "en",
+    fmt: str = "html",
+) -> str:
+    """Generate canonical artifact unique identifier."""
+    clean_celex = celex_id.replace("(", "").replace(")", "")
+    date_compact = publication_date.strftime("%Y%m%d")
+    return f"art_{clean_celex}_oj_{language.lower()}_{fmt.lower()}_v{date_compact}"

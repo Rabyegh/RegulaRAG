@@ -52,6 +52,16 @@ class TestAppSettingsDefaults:
         settings = AppSettings()
         assert settings.app_version == "0.1.0"
 
+    def test_default_ingestion_settings(self) -> None:
+        settings = AppSettings()
+        assert str(settings.ingestion_raw_storage_dir).replace("\\", "/").endswith("data/raw")
+        assert settings.ingestion_http_timeout_connect == 10.0
+        assert settings.ingestion_http_timeout_read == 60.0
+        assert settings.ingestion_max_retries == 3
+        assert settings.ingestion_backoff_factor == 2.0
+        assert settings.ingestion_request_rate_limit == 1.0
+        assert "RegulaRAG-Bot" in settings.ingestion_user_agent
+
 
 @pytest.mark.unit
 class TestAppSettingsEnvironmentOverride:
@@ -76,6 +86,13 @@ class TestAppSettingsEnvironmentOverride:
         monkeypatch.setenv("LOG_LEVEL", "DEBUG")
         settings = AppSettings()
         assert settings.log_level == "DEBUG"
+
+    def test_override_ingestion_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("INGESTION_MAX_RETRIES", "5")
+        monkeypatch.setenv("INGESTION_REQUEST_RATE_LIMIT", "0.5")
+        settings = AppSettings()
+        assert settings.ingestion_max_retries == 5
+        assert settings.ingestion_request_rate_limit == 0.5
 
 
 @pytest.mark.unit

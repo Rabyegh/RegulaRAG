@@ -371,7 +371,7 @@ uv run mypy src/
 | Phase | Title | Status |
 |-------|-------|--------|
 | **1** | Project Foundation & Architecture | ✅ Completed |
-| **2** | Regulatory Data Engineering Pipeline | 🟡 **In Progress** (Subphase 2.1 Complete) |
+| **2** | Regulatory Data Engineering Pipeline | 🟡 **In Progress** (Subphases 2.1 & 2.2 Complete) |
 | **3** | Legal Document Intelligence & Storage | 📅 Planned |
 | **4** | Core Hybrid RAG Engine | 📅 Planned |
 | **5** | Advanced RAG & Legal Knowledge Graph | 📅 Planned |

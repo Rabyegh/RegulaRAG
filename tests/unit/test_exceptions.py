@@ -12,9 +12,14 @@ from http import HTTPStatus
 import pytest
 
 from regularag.core.exceptions import (
+    AcquisitionConnectionError,
+    AcquisitionError,
+    AcquisitionRateLimitError,
+    AcquisitionTimeoutError,
     AuthenticationError,
     AuthorizationError,
     ConfigurationError,
+    DocumentContentValidationError,
     DocumentNotFoundError,
     EmbeddingError,
     GraphError,
@@ -25,6 +30,7 @@ from regularag.core.exceptions import (
     RegulaRAGError,
     RetrievalError,
     ValidationError,
+    VersionIntegrityConflictError,
 )
 
 
@@ -69,6 +75,12 @@ class TestExceptionHierarchy:
             ConfigurationError,
             IngestionError,
             DocumentNotFoundError,
+            AcquisitionError,
+            AcquisitionTimeoutError,
+            AcquisitionConnectionError,
+            AcquisitionRateLimitError,
+            DocumentContentValidationError,
+            VersionIntegrityConflictError,
             RetrievalError,
             EmbeddingError,
             RAGError,
@@ -106,6 +118,14 @@ class TestHttpStatusCodes:
 
     def test_ingestion_error_status(self) -> None:
         assert IngestionError().http_status == HTTPStatus.UNPROCESSABLE_ENTITY
+
+    def test_acquisition_error_statuses(self) -> None:
+        assert AcquisitionError().http_status == HTTPStatus.BAD_GATEWAY
+        assert AcquisitionTimeoutError().http_status == HTTPStatus.GATEWAY_TIMEOUT
+        assert AcquisitionConnectionError().http_status == HTTPStatus.BAD_GATEWAY
+        assert AcquisitionRateLimitError().http_status == HTTPStatus.TOO_MANY_REQUESTS
+        assert DocumentContentValidationError().http_status == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert VersionIntegrityConflictError().http_status == HTTPStatus.CONFLICT
 
     def test_retrieval_error_status(self) -> None:
         assert RetrievalError().http_status == HTTPStatus.INTERNAL_SERVER_ERROR

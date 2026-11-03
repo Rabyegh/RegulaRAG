@@ -199,6 +199,37 @@ uv run mypy src/
 
 ---
 
+## Document Acquisition (Phase 2)
+
+### Programmatic Usage
+
+Documents can be acquired programmatically using `AcquisitionService`:
+
+```python
+import asyncio
+from regularag.ingestion import AcquisitionService
+
+
+async def main() -> None:
+    async with AcquisitionService() as service:
+        # Acquire single document by registry slug
+        result = await service.acquire_document("eu_ai_act")
+        print(f"Acquired: {result.document_id} -> status={result.status}")
+        print(f"Storage path: {result.file_path}")
+        print(f"SHA-256: {result.sha256_checksum}")
+
+        # Or acquire by official CELEX ID
+        result = await service.acquire_by_celex("32016R0679")
+        print(f"GDPR acquired: {result.status}")
+
+
+asyncio.run(main())
+```
+
+All acquired artifacts are saved immutably to `data/raw/{jurisdiction}/{document_id}/...` alongside `.meta.json` sidecar files.
+
+---
+
 ## Configuration Management
 
 All configuration is managed through `src/regularag/core/config.py` using Pydantic Settings. Settings are loaded in this order (later values override earlier):

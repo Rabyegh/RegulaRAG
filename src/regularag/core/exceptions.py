@@ -43,7 +43,7 @@ class ConfigurationError(RegulaRAGError):
 
 
 # ---------------------------------------------------------------------------
-# Ingestion errors (future Phase 2)
+# Ingestion and Acquisition errors (Phase 2)
 # ---------------------------------------------------------------------------
 
 
@@ -59,6 +59,48 @@ class DocumentNotFoundError(RegulaRAGError):
 
     message = "Document not found."
     http_status = HTTPStatus.NOT_FOUND
+
+
+class AcquisitionError(IngestionError):
+    """Raised when document acquisition over HTTP fails."""
+
+    message = "Document acquisition failed."
+    http_status = HTTPStatus.BAD_GATEWAY
+
+
+class AcquisitionTimeoutError(AcquisitionError):
+    """Raised when an acquisition request times out."""
+
+    message = "Document acquisition timed out."
+    http_status = HTTPStatus.GATEWAY_TIMEOUT
+
+
+class AcquisitionConnectionError(AcquisitionError):
+    """Raised when network connection to the source repository fails."""
+
+    message = "Failed to connect to official document repository."
+    http_status = HTTPStatus.BAD_GATEWAY
+
+
+class AcquisitionRateLimitError(AcquisitionError):
+    """Raised when the official repository throttles requests (HTTP 429)."""
+
+    message = "Acquisition rate limit exceeded."
+    http_status = HTTPStatus.TOO_MANY_REQUESTS
+
+
+class DocumentContentValidationError(IngestionError):
+    """Raised when an acquired document fails content or integrity validation."""
+
+    message = "Acquired document content validation failed."
+    http_status = HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+class VersionIntegrityConflictError(IngestionError):
+    """Raised when a re-fetched artifact differs in SHA-256 without a new legal version."""
+
+    message = "Version integrity conflict detected: payload hash differs from existing artifact."
+    http_status = HTTPStatus.CONFLICT
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ and optional .env files. Credentials are never hardcoded.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -58,6 +59,53 @@ class AppSettings(BaseSettings):
     cors_origins: str = Field(
         default="http://localhost:3000,http://localhost:5173",
         description="Comma-separated allowed CORS origins",
+    )
+
+    # ---------------------------------------------------------------------------
+    # Regulatory Document Ingestion & Acquisition (Phase 2)
+    # ---------------------------------------------------------------------------
+    ingestion_raw_storage_dir: Path = Field(
+        default=Path("data/raw"),
+        description="Root directory for raw acquired regulatory documents",
+    )
+    ingestion_http_timeout_connect: float = Field(
+        default=10.0,
+        gt=0,
+        description="HTTP connection timeout in seconds",
+    )
+    ingestion_http_timeout_read: float = Field(
+        default=60.0,
+        gt=0,
+        description="HTTP read timeout in seconds",
+    )
+    ingestion_max_retries: int = Field(
+        default=3,
+        ge=0,
+        description="Maximum retry attempts for transient HTTP failures",
+    )
+    ingestion_backoff_factor: float = Field(
+        default=2.0,
+        gt=0,
+        description="Exponential backoff multiplier for retries",
+    )
+    ingestion_min_retry_delay: float = Field(
+        default=1.0,
+        ge=0,
+        description="Minimum initial retry delay in seconds",
+    )
+    ingestion_max_retry_delay: float = Field(
+        default=30.0,
+        gt=0,
+        description="Maximum retry delay ceiling in seconds",
+    )
+    ingestion_request_rate_limit: float = Field(
+        default=1.0,
+        ge=0,
+        description="Minimum seconds between outbound requests to the same domain (request pacing)",
+    )
+    ingestion_user_agent: str = Field(
+        default="RegulaRAG-Bot/0.1.0 (+https://github.com/Rabyegh/RegulaRAG; compliance-research)",
+        description="User-Agent header for official regulatory repository acquisition",
     )
 
     # ---------------------------------------------------------------------------
