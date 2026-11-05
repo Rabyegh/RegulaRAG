@@ -8,6 +8,7 @@ and version integrity validation according to docs/data-ingestion-design.md.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -45,10 +46,26 @@ class ExistingArtifact:
         self.metadata = metadata
 
     @property
+    def is_complete(self) -> bool:
+        """True if both the document payload and valid sidecar metadata exist."""
+        return (
+            self.file_path.is_file()
+            and self.sidecar_path is not None
+            and self.sidecar_path.is_file()
+            and self.metadata is not None
+        )
+
+    @property
     def sha256_checksum(self) -> str | None:
-        """Return the SHA-256 hash recorded in the sidecar, if available."""
+        """Return the SHA-256 hash recorded in the sidecar, or compute directly from disk."""
         if self.metadata and self.metadata.file_metadata:
             return self.metadata.file_metadata.sha256_checksum
+        if self.file_path.is_file():
+            hasher = hashlib.sha256()
+            with open(self.file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
         return None
 
     @property
@@ -135,11 +152,14 @@ class RawArtifactStorage:
             corrigendum_celex=corrigendum_celex,
         )
 
-        if not file_path.is_file():
+        has_file = file_path.is_file()
+        has_sidecar = sidecar_path.is_file()
+
+        if not has_file and not has_sidecar:
             return None
 
         metadata: ArtifactSidecarMetadata | None = None
-        if sidecar_path.is_file():
+        if has_sidecar:
             try:
                 raw_json = sidecar_path.read_text(encoding="utf-8")
                 metadata = ArtifactSidecarMetadata.model_validate_json(raw_json)
@@ -152,9 +172,80 @@ class RawArtifactStorage:
 
         return ExistingArtifact(
             file_path=file_path,
-            sidecar_path=sidecar_path if sidecar_path.is_file() else None,
+            sidecar_path=sidecar_path if has_sidecar else None,
             metadata=metadata,
         )
+
+    def write_sidecar(
+        self,
+        sidecar_file: Path,
+        metadata: ArtifactSidecarMetadata,
+    ) -> None:
+        """Write metadata sidecar atomically via temporary file."""
+        sidecar_file.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_tmp = sidecar_file.with_name(f"{sidecar_file.name}.tmp.{uuid4().hex[:8]}")
+        try:
+            sidecar_dict = metadata.model_dump(by_alias=True, mode="json")
+            sidecar_tmp.write_text(
+                json.dumps(sidecar_dict, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            sidecar_tmp.replace(sidecar_file)
+        finally:
+            if sidecar_tmp.exists():
+                sidecar_tmp.unlink(missing_ok=True)
+
+    def verify_artifact_integrity(
+        self,
+        source: RegulatorySourceEntry,
+        category: str = "original_act",
+        target_format: str = "HTML",
+        corrigendum_celex: str | None = None,
+    ) -> tuple[str, ExistingArtifact | None]:
+        """Verify presence and internal consistency of an artifact pair.
+
+        Returns:
+            A tuple of (status, existing_artifact), where status is one of:
+            - 'COMPLETE': Both payload and sidecar exist, sidecar is valid and checksum matches.
+            - 'MISSING_SIDECAR': Payload exists on disk but sidecar is missing or invalid.
+            - 'ORPHAN_SIDECAR': Sidecar exists on disk but raw document file is missing.
+            - 'CHECKSUM_MISMATCH': Both exist but sidecar checksum disagrees with disk file.
+            - 'NOT_FOUND': Neither payload nor sidecar exists.
+        """
+        existing = self.get_existing_artifact(
+            source=source,
+            category=category,
+            target_format=target_format,
+            corrigendum_celex=corrigendum_celex,
+        )
+        if existing is None:
+            return "NOT_FOUND", None
+
+        has_file = existing.file_path.is_file()
+        has_sidecar = (
+            existing.sidecar_path is not None
+            and existing.sidecar_path.is_file()
+            and existing.metadata is not None
+        )
+
+        if has_file and not has_sidecar:
+            return "MISSING_SIDECAR", existing
+        if not has_file and has_sidecar:
+            return "ORPHAN_SIDECAR", existing
+
+        # Both present — verify checksum
+        if existing.metadata and existing.metadata.file_metadata:
+            sidecar_hash = existing.metadata.file_metadata.sha256_checksum
+            # Compute actual disk file hash
+            hasher = hashlib.sha256()
+            with open(existing.file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            actual_hash = hasher.hexdigest()
+            if sidecar_hash != actual_hash:
+                return "CHECKSUM_MISMATCH", existing
+
+        return "COMPLETE", existing
 
     def create_staging_file(self, target_file: Path) -> Path:
         """Create and return a temporary staging path in the target directory."""
@@ -194,10 +285,7 @@ class RawArtifactStorage:
                     new_hash=new_sha256,
                 )
 
-        # Atomic replacement of target file
-        staging_file.replace(target_file)
-
-        # Write sidecar atomically via temporary file
+        # Prepare sidecar in staging file before touching target_file
         sidecar_tmp = sidecar_file.with_name(f"{sidecar_file.name}.tmp.{uuid4().hex[:8]}")
         try:
             sidecar_dict = metadata.model_dump(by_alias=True, mode="json")
@@ -205,6 +293,8 @@ class RawArtifactStorage:
                 json.dumps(sidecar_dict, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
+            # Both payload and sidecar staging are ready: commit both atomically
+            staging_file.replace(target_file)
             sidecar_tmp.replace(sidecar_file)
         finally:
             if sidecar_tmp.exists():

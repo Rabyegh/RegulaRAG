@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import hashlib
+import random
 import time
 from http import HTTPStatus
 from pathlib import Path  # noqa: TC003
@@ -66,6 +67,7 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
         max_retry_delay: float | None = None,
         rate_limit_delay: float | None = None,
         user_agent: str | None = None,
+        enable_jitter: bool = True,
     ) -> None:
         settings = get_settings()
 
@@ -96,6 +98,7 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
             else settings.ingestion_request_rate_limit
         )
         self.user_agent = user_agent or settings.ingestion_user_agent
+        self.enable_jitter = enable_jitter
 
         # Pacing control
         self._last_request_time: float = 0.0
@@ -280,23 +283,44 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
                     # 1. HTTP 304 Not Modified
                     # ---------------------------------------------------------
                     if status == HTTPStatus.NOT_MODIFIED:
+                        staging_file.unlink(missing_ok=True)
+
+                        # Case 2: Missing artifact + HTTP 304
+                        if existing is None or not existing.file_path.is_file():
+                            logger.warning(
+                                "Received HTTP 304 Not Modified but local artifact is missing; "
+                                "retrying unconditionally",
+                                document_id=source.document_id,
+                                celex_id=source.celex_id,
+                            )
+                            if "If-None-Match" in headers or "If-Modified-Since" in headers:
+                                headers.pop("If-None-Match", None)
+                                headers.pop("If-Modified-Since", None)
+                                continue
+                            raise AcquisitionError(
+                                f"Received unexpected HTTP 304 Not Modified for document "
+                                f"'{source.document_id}' without conditional headers, "
+                                "but no local artifact file exists to satisfy the request.",
+                                document_id=source.document_id,
+                                celex_id=source.celex_id,
+                            )
+
                         logger.info(
                             "Document not modified (HTTP 304)",
                             document_id=source.document_id,
                             celex_id=source.celex_id,
                         )
-                        staging_file.unlink(missing_ok=True)
                         return AcquisitionResult(
                             document_id=source.document_id,
                             celex_id=source.celex_id,
                             artifact_version_id=version_id,
                             status=AcquisitionStatus.NOT_MODIFIED,
                             http_status=304,
-                            file_path=existing.file_path if existing else target_file,
-                            sidecar_path=existing.sidecar_path if existing else sidecar_file,
-                            sha256_checksum=existing.sha256_checksum if existing else None,
+                            file_path=existing.file_path,
+                            sidecar_path=existing.sidecar_path or sidecar_file,
+                            sha256_checksum=existing.sha256_checksum,
                             bytes_downloaded=0,
-                            metadata=existing.metadata if existing else None,
+                            metadata=existing.metadata,
                         )
 
                     # ---------------------------------------------------------
@@ -379,7 +403,7 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
                 # Idempotency check: if existing file matches SHA-256, preserve it
                 if (
                     existing
-                    and existing.file_path.exists()
+                    and existing.file_path.is_file()
                     and existing.sha256_checksum == new_sha256
                 ):
                     logger.info(
@@ -389,6 +413,41 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
                         sha256=new_sha256,
                     )
                     staging_file.unlink(missing_ok=True)
+
+                    active_sidecar = existing.sidecar_path
+                    active_metadata = existing.metadata
+
+                    # Heal missing or unparseable sidecar metadata
+                    if (
+                        not active_sidecar
+                        or not active_sidecar.is_file()
+                        or active_metadata is None
+                    ):
+                        logger.info(
+                            "Healing missing/invalid sidecar metadata for existing artifact",
+                            document_id=source.document_id,
+                            sidecar_path=str(sidecar_file),
+                        )
+                        healed_metadata = self.storage.build_sidecar_metadata(
+                            source=source,
+                            retrieved_at=retrieved_at,
+                            http_status=200,
+                            etag=etag,
+                            last_modified=last_modified,
+                            duration_seconds=duration,
+                            format_name=fmt,
+                            media_type=content_type,
+                            file_size_bytes=bytes_downloaded,
+                            sha256_checksum=new_sha256,
+                            target_file=target_file,
+                            sidecar_file=sidecar_file,
+                            category="original_act",
+                            checks_passed=checks_passed,
+                        )
+                        self.storage.write_sidecar(sidecar_file, healed_metadata)
+                        active_sidecar = sidecar_file
+                        active_metadata = healed_metadata
+
                     return AcquisitionResult(
                         document_id=source.document_id,
                         celex_id=source.celex_id,
@@ -396,10 +455,10 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
                         status=AcquisitionStatus.UNCHANGED,
                         http_status=200,
                         file_path=existing.file_path,
-                        sidecar_path=existing.sidecar_path,
+                        sidecar_path=active_sidecar,
                         sha256_checksum=new_sha256,
                         bytes_downloaded=bytes_downloaded,
-                        metadata=existing.metadata,
+                        metadata=active_metadata,
                     )
 
                 # Build sidecar metadata
@@ -471,7 +530,7 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
                     )
                     break
 
-                # Compute exponential backoff delay
+                # Compute exponential backoff delay with bounded jitter
                 retry_val = (
                     exc.context.get("retry_after")
                     if isinstance(exc, AcquisitionRateLimitError)
@@ -480,10 +539,15 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
                 if retry_val is not None and isinstance(retry_val, (int, float, str)):
                     delay = min(float(retry_val), self.max_retry_delay)
                 else:
-                    delay = min(
+                    base_delay = min(
                         self.max_retry_delay,
                         self.min_retry_delay * (self.backoff_factor ** (attempt - 1)),
                     )
+                    if self.enable_jitter and base_delay > 0.0:
+                        jitter = random.uniform(0.0, 0.5 * base_delay)  # noqa: S311
+                        delay = min(self.max_retry_delay, base_delay + jitter)
+                    else:
+                        delay = base_delay
 
                 logger.warning(
                     "Transient acquisition failure; retrying with backoff",
@@ -493,6 +557,11 @@ class EurLexHttpConnector(BaseAcquisitionConnector):
                     error=str(exc),
                 )
                 await asyncio.sleep(delay)
+
+            except AcquisitionError:
+                # Non-retryable generic acquisition errors (e.g. unexpected status, missing artifact on 304)
+                staging_file.unlink(missing_ok=True)
+                raise
 
             except Exception as exc:
                 staging_file.unlink(missing_ok=True)

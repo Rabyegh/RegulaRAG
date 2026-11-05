@@ -32,6 +32,7 @@ import pytest
 
 from regularag.core.exceptions import (
     AcquisitionConnectionError,
+    AcquisitionError,
     AcquisitionRateLimitError,
     AcquisitionTimeoutError,
     DocumentContentValidationError,
@@ -286,38 +287,78 @@ class TestSuccessfulAcquisition:
 
 class TestHTTP304NotModified:
     @pytest.mark.asyncio
-    async def test_304_returns_not_modified_status(
+    async def test_304_with_existing_artifact_preserves_artifact(
         self, ai_act_source: RegulatorySourceEntry, tmp_path: Path
     ) -> None:
-        response = httpx.Response(304, content=b"")
-        conn = _connector(tmp_path, _make_client(response))
-        result = await conn.acquire(ai_act_source)
+        """Case 1: Existing artifact + HTTP 304 preserves artifact and returns not_modified."""
+        content = _make_html_content()
+        resp_200 = httpx.Response(
+            200,
+            content=content,
+            headers={"Content-Type": "text/html", "ETag": '"etag-v1"'},
+        )
+        conn = _connector(tmp_path, _make_client(resp_200))
+        first = await conn.acquire(ai_act_source)
+        assert first.status == AcquisitionStatus.SUCCESS
+
+        # Second request receives HTTP 304
+        resp_304 = httpx.Response(304, content=b"")
+        conn_304 = _connector(tmp_path, _make_client(resp_304))
+        result = await conn_304.acquire(ai_act_source)
 
         assert result.status == AcquisitionStatus.NOT_MODIFIED
         assert result.http_status == 304
         assert result.bytes_downloaded == 0
+        assert result.file_path is not None
+        assert result.file_path.is_file()
+        assert result.file_path.read_bytes() == content
+        assert result.sha256_checksum == _sha256(content)
 
     @pytest.mark.asyncio
-    async def test_304_does_not_create_file(
+    async def test_304_missing_artifact_raises_acquisition_error(
         self, ai_act_source: RegulatorySourceEntry, tmp_path: Path
     ) -> None:
+        """Case 2a: Missing artifact + HTTP 304 without headers raises AcquisitionError."""
         response = httpx.Response(304, content=b"")
         conn = _connector(tmp_path, _make_client(response))
-        await conn.acquire(ai_act_source)
+        with pytest.raises(AcquisitionError, match="no local artifact"):
+            await conn.acquire(ai_act_source)
 
         files = list(tmp_path.rglob("*.html"))
         assert files == []
 
     @pytest.mark.asyncio
-    async def test_304_leaves_no_staging_file(
+    async def test_304_missing_artifact_retries_unconditional_get(
         self, ai_act_source: RegulatorySourceEntry, tmp_path: Path
     ) -> None:
-        response = httpx.Response(304, content=b"")
-        conn = _connector(tmp_path, _make_client(response))
-        await conn.acquire(ai_act_source)
+        """Case 2b: Conditional request receiving 304 with missing file retries unconditionally."""
+        content = _make_html_content()
+        # First request gets 200 with ETag
+        resp_200 = httpx.Response(
+            200,
+            content=content,
+            headers={"Content-Type": "text/html", "ETag": '"etag-v1"'},
+        )
+        conn = _connector(tmp_path, _make_client(resp_200))
+        first = await conn.acquire(ai_act_source)
+        assert first.file_path is not None
 
-        tmp_files = list(tmp_path.rglob("*.tmp.*"))
-        assert tmp_files == []
+        # Simulate local artifact deletion while sidecar remains (orphan sidecar)
+        first.file_path.unlink()
+
+        # Responses for next acquisition: 304 for conditional, then 200 for unconditional retry
+        responses = [
+            httpx.Response(304, content=b""),
+            httpx.Response(200, content=content, headers={"Content-Type": "text/html"}),
+        ]
+        client, transport = _make_multi_client(responses)
+        conn_retry = _connector(tmp_path, client, max_retries=2)
+        result = await conn_retry.acquire(ai_act_source)
+
+        assert result.status == AcquisitionStatus.SUCCESS
+        assert result.file_path is not None
+        assert result.file_path.is_file()
+        assert len(transport.recorded_requests) >= 1
 
 
 # ===========================================================================
@@ -1096,9 +1137,16 @@ class TestRawArtifactStorageCommit:
 
 
 class TestExistingArtifact:
-    def test_sha256_returns_none_without_metadata(self, tmp_path: Path) -> None:
+    def test_sha256_returns_none_without_metadata_and_file_missing(self, tmp_path: Path) -> None:
         artifact = ExistingArtifact(file_path=tmp_path / "file.html")
         assert artifact.sha256_checksum is None
+
+    def test_sha256_computed_from_disk_file_when_metadata_missing(self, tmp_path: Path) -> None:
+        file = tmp_path / "file.html"
+        content = b"<html>test content</html>"
+        file.write_bytes(content)
+        artifact = ExistingArtifact(file_path=file)
+        assert artifact.sha256_checksum == _sha256(content)
 
     def test_etag_returns_none_without_metadata(self, tmp_path: Path) -> None:
         artifact = ExistingArtifact(file_path=tmp_path / "file.html")
@@ -1150,3 +1198,154 @@ class TestCanonicalIdentifiers:
         )
         assert aid.startswith("art_32024R1689_")
         assert "html" in aid
+
+
+# ===========================================================================
+# Section 18: Storage Consistency and Recovery
+# ===========================================================================
+
+
+class TestStorageConsistencyAndRecovery:
+    @pytest.mark.asyncio
+    async def test_missing_sidecar_is_healed_on_reacquisition(
+        self, ai_act_source: RegulatorySourceEntry, tmp_path: Path
+    ) -> None:
+        """When an artifact exists on disk but sidecar is missing, re-acquisition heals it."""
+        content = _make_html_content()
+        resp_200 = httpx.Response(200, content=content, headers={"Content-Type": "text/html"})
+        conn = _connector(tmp_path, _make_client(resp_200))
+        result1 = await conn.acquire(ai_act_source)
+        assert result1.sidecar_path is not None
+        assert result1.sidecar_path.is_file()
+
+        # Delete the sidecar
+        result1.sidecar_path.unlink()
+        assert not result1.sidecar_path.exists()
+
+        # Re-acquire with identical content
+        resp_200b = httpx.Response(200, content=content, headers={"Content-Type": "text/html"})
+        conn2 = _connector(tmp_path, _make_client(resp_200b))
+        result2 = await conn2.acquire(ai_act_source)
+
+        assert result2.status == AcquisitionStatus.UNCHANGED
+        assert result2.sidecar_path is not None
+        assert result2.sidecar_path.is_file()
+        assert result2.metadata is not None
+
+    @pytest.mark.asyncio
+    async def test_missing_sidecar_detects_hash_conflict_on_changed_payload(
+        self, ai_act_source: RegulatorySourceEntry, tmp_path: Path
+    ) -> None:
+        """If sidecar was deleted, hash conflict must still be detected from disk file."""
+        content_a = _make_html_content(2048)
+        resp_a = httpx.Response(200, content=content_a, headers={"Content-Type": "text/html"})
+        conn_a = _connector(tmp_path, _make_client(resp_a))
+        result_a = await conn_a.acquire(ai_act_source)
+
+        # Delete sidecar
+        assert result_a.sidecar_path is not None
+        result_a.sidecar_path.unlink()
+
+        # Try to acquire with differing content
+        content_b = _make_html_content(4096)
+        resp_b = httpx.Response(200, content=content_b, headers={"Content-Type": "text/html"})
+        conn_b = _connector(tmp_path, _make_client(resp_b))
+
+        with pytest.raises(VersionIntegrityConflictError):
+            await conn_b.acquire(ai_act_source)
+
+    def test_verify_artifact_integrity_states(
+        self, ai_act_source: RegulatorySourceEntry, tmp_path: Path
+    ) -> None:
+        """Test verify_artifact_integrity across all possible filesystem states."""
+        storage = RawArtifactStorage(tmp_path)
+
+        # 1. NOT_FOUND
+        status, art = storage.verify_artifact_integrity(ai_act_source)
+        assert status == "NOT_FOUND"
+        assert art is None
+
+        # 2. MISSING_SIDECAR
+        target_file, sidecar_file = storage.resolve_artifact_paths(ai_act_source)
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        content = _make_html_content()
+        target_file.write_bytes(content)
+
+        status, art = storage.verify_artifact_integrity(ai_act_source)
+        assert status == "MISSING_SIDECAR"
+        assert art is not None
+        assert not art.is_complete
+
+        # 3. COMPLETE
+        meta = storage.build_sidecar_metadata(
+            source=ai_act_source,
+            retrieved_at=dt.datetime.now(dt.UTC),
+            http_status=200,
+            etag=None,
+            last_modified=None,
+            duration_seconds=0.2,
+            format_name="HTML",
+            media_type="text/html",
+            file_size_bytes=len(content),
+            sha256_checksum=_sha256(content),
+            target_file=target_file,
+            sidecar_file=sidecar_file,
+        )
+        storage.write_sidecar(sidecar_file, meta)
+
+        status, art = storage.verify_artifact_integrity(ai_act_source)
+        assert status == "COMPLETE"
+        assert art is not None
+        assert art.is_complete
+
+        # 4. ORPHAN_SIDECAR
+        target_file.unlink()
+        status, art = storage.verify_artifact_integrity(ai_act_source)
+        assert status == "ORPHAN_SIDECAR"
+        assert art is not None
+        assert not art.is_complete
+
+        # 5. CHECKSUM_MISMATCH
+        target_file.write_bytes(b"tampered content that does not match sidecar sha256")
+        status, art = storage.verify_artifact_integrity(ai_act_source)
+        assert status == "CHECKSUM_MISMATCH"
+
+
+# ===========================================================================
+# Section 19: Jittered Retry Backoff
+# ===========================================================================
+
+
+class TestJitteredRetryBackoff:
+    def test_jitter_is_enabled_by_default(self, tmp_path: Path) -> None:
+        conn = EurLexHttpConnector(storage=RawArtifactStorage(tmp_path))
+        assert conn.enable_jitter is True
+
+    @pytest.mark.asyncio
+    async def test_jitter_bounds_delay(
+        self, ai_act_source: RegulatorySourceEntry, tmp_path: Path
+    ) -> None:
+        """Verify backoff delay with jitter is bounded between base_delay and max_retry_delay."""
+        content = _make_html_content()
+        responses = [
+            httpx.Response(503, content=b"Unavailable"),
+            httpx.Response(200, content=content, headers={"Content-Type": "text/html"}),
+        ]
+        client, _ = _make_multi_client(responses)
+        conn = EurLexHttpConnector(
+            storage=RawArtifactStorage(tmp_path),
+            client=client,
+            max_retries=1,
+            min_retry_delay=2.0,
+            max_retry_delay=10.0,
+            backoff_factor=2.0,
+            enable_jitter=True,
+            rate_limit_delay=0.0,
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await conn.acquire(ai_act_source)
+            assert result.status == AcquisitionStatus.SUCCESS
+            assert mock_sleep.called
+            slept_delay = mock_sleep.call_args[0][0]
+            assert 2.0 <= slept_delay <= 10.0
